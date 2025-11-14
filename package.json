@@ -1,0 +1,34 @@
+{
+    "name": "crud-diff-detector",
+    "version": "1.0.0",
+    "description": "Detect CRUD operations (insert/update/delete/none) between JavaScript objects with smart array matching",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "test": "node ./test/simple-test.js",
+        "prepublishOnly": "npm run build && npm test"
+    },
+    "keywords": [
+        "diff",
+        "crud",
+        "object",
+        "comparison",
+        "changes",
+        "audit",
+        "typescript"
+    ],
+    "author": "Rafael Nava",
+    "license": "MIT",
+    "devDependencies": {
+        "@types/node": "^24.10.1",
+        "typescript": "^5.9.3"
+    },
+    "dependencies": {
+        "microdiff": "github:RafaelHubGit/microdiff#shallow"
+    },
+    "directories": {
+        "test": "test"
+    },
+    "files": ["dist/**/*"]
+}
