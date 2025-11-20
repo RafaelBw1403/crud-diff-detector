@@ -10,73 +10,41 @@ export function compareObjects(
     const result = JSON.parse(JSON.stringify(modified));
     
     const getMatchOnByName = (fullPath: string): string[] | undefined => {
-
+        console.log('🔍 BUSCANDO MATCH PARA:', fullPath);
         
         const normalizePath = (path: string): string[] => {
             return path.replace(/\[\d+\]/g, '').split('.').filter(part => part !== '');
         };
         
         const pathParts = normalizePath(fullPath);
-
+        console.log('📝 PATH NORMALIZADO:', pathParts);
         
-        let current: MatchOnValue | undefined = matchOnMap;
+        let current: any = matchOnMap;
         
         for (let i = 0; i < pathParts.length; i++) {
             const part = pathParts[i];
-
+            console.log(`🔄 Procesando parte ${i}: "${part}"`, 'Current:', current);
             
-            if (!current || typeof current !== 'object') {
-
+            if (current && current[part] !== undefined) {
+                current = current[part];
+                console.log(`✅ Encontrado:`, current);
+            } else if (current && current.children && current.children[part] !== undefined) {
+                current = current.children[part];
+                console.log(`✅ Encontrado en children:`, current);
+            } else {
+                console.log(`❌ No encontrado: "${part}"`);
                 return undefined;
             }
             
-            if (Array.isArray(current)) {
-
-                return current;
-            }
-            
-            // PRIMERO: Buscar directamente en el nivel actual
-            if ((current as MatchOnMap)[part] !== undefined) {
-                current = (current as MatchOnMap)[part];
-
-            } 
-            // SEGUNDO: Si es un nodo jerárquico, buscar en sus children
-            else if (!Array.isArray(current) && current.children && (current.children as MatchOnMap)[part] !== undefined) {
-                current = (current.children as MatchOnMap)[part];
-
-            }
-            // TERCERO: Buscar recursivamente en todos los children de los nodos
-            else {
-
-                let found = false;
-                
-                for (const key in current as MatchOnMap) {
-                    const value: MatchOnValue = (current as MatchOnMap)[key];
-                    if (!Array.isArray(value) && value?.children && (value.children as MatchOnMap)[part] !== undefined) {
-                        current = (value.children as MatchOnMap)[part];
-                        found = true;
-
-                        break;
-                    }
-                }
-                
-                if (!found) {
-
-                    return undefined;
-                }
+            // Si es un nodo con matchOn y es la última parte, devolver matchOn
+            if (i === pathParts.length - 1 && current && typeof current === 'object' && !Array.isArray(current) && current.matchOn) {
+                console.log(`🎯 Devolviendo matchOn:`, current.matchOn);
+                return current.matchOn;
             }
         }
         
-        // Si es un nodo jerárquico, devolver matchOn
-        if (current && !Array.isArray(current) && current.matchOn) {
-
-            return current.matchOn;
-        }
-        
-        // Si es array simple, devolver directamente
-        const result = Array.isArray(current) ? current : undefined;
-
-        return result;
+        console.log(`📦 Resultado final:`, Array.isArray(current) ? current : undefined);
+        return Array.isArray(current) ? current : undefined;
     };
 
     const rutasUnificadas = getUnifiedPaths(original, modified);
@@ -124,10 +92,8 @@ function processPath(
             operation = diferencias.length > 0 ? 'update' : 'none';
             
             // CREAR NUEVO ARRAY CON _op
-            const arrayConOp = {
-                ...modifiedValue,
-                _op: operation
-            };
+            const arrayConOp = [...modifiedValue];
+            Object.assign(arrayConOp, { _op: operation });
             setByPath(result, path, arrayConOp);
             return;
         }
@@ -248,26 +214,23 @@ function getComplexPathsWithType(obj: any, prefix = ""): PathInfo[] {
         rutas.push({ ruta: prefix || "(root)", tipo: 'array' });
         
         obj.forEach((item, index) => {
-        if (item && typeof item === "object") {
-            const hasComplexSons = Object.values(item).some(
-                val => val && typeof val === "object"
-            );
-            if (hasComplexSons) {
-                rutas.push(...getComplexPathsWithType(item, `${prefix}[${index}]`));
+            if (item && typeof item === "object") {
+                // AGREGAR ESTA LÍNEA: Incluir el path del array hijo
+                const arrayPath = `${prefix}[${index}]`;
+                rutas.push(...getComplexPathsWithType(item, arrayPath));
             }
-        }
         });
     } else if (obj && typeof obj === "object") {
         rutas.push({ ruta: prefix || "(root)", tipo: 'objeto' });
         
         for (const key in obj) {
-        if (Object.prototype.hasOwnProperty.call(obj, key)) {
-            const value = obj[key];
-            if (value && typeof value === "object") {
-            const newPrefix = prefix ? `${prefix}.${key}` : key;
-            rutas.push(...getComplexPathsWithType(value, newPrefix));
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                const value = obj[key];
+                if (value && typeof value === "object") {
+                    const newPrefix = prefix ? `${prefix}.${key}` : key;
+                    rutas.push(...getComplexPathsWithType(value, newPrefix));
+                }
             }
-        }
         }
     }
 
