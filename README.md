@@ -70,15 +70,26 @@ The modified object with _op properties indicating the operation:
 - 'none': No changes
 
 ### MatchOnMap Configuration
-Define how to match elements in arrays:
+Define how to match elements in arrays, including nested arrays:
 
 ```typescript
 const matchOnMap = {
   'users': ['id'],           // Match by single field
   'products': ['id', 'sku'], // Match by multiple fields
-  'tags': []                 // No matching - direct comparison
+  'tags': [],                // No matching - direct comparison
+  
+  // Nested array matching
+  'orders': {
+    matchOn: ['orderId'],    // Match orders by orderId
+    children: {
+      'items': ['itemId']    // Match items within orders by itemId
+    }
+  }
 };
 ```
+
+### Deep Diff & Recursive Tagging
+When an object is marked as `insert` or `delete`, all its nested objects and arrays are automatically recursively marked with the same operation. This ensures that the entire subtree reflects the change status.
 
 ### Examples
 Basic Object Comparison
@@ -108,6 +119,58 @@ const result = compareObjects(original, modified);
 // profile.personal.age has _op: 'update'
 ```
 
+### Nested Array Matching (MatchOnNode)
+This example demonstrates how to use the `MatchOnNode` structure to match arrays within arrays.
+
+```typescript
+const original = {
+  id: 1,
+  orders: [
+    {
+      orderId: 'A1',
+      items: [
+        { itemId: 1, qty: 1 },
+        { itemId: 2, qty: 1 }
+      ]
+    }
+  ]
+};
+
+const modified = {
+  id: 1,
+  orders: [
+    {
+      orderId: 'A1',
+      items: [
+        { itemId: 1, qty: 2 }, // updated
+        { itemId: 3, qty: 1 }  // inserted
+        // itemId: 2 deleted
+      ]
+    }
+  ]
+};
+
+const matchOnMap = {
+  'orders': {
+    matchOn: ['orderId'],
+    children: {
+      'items': ['itemId']
+    }
+  }
+};
+
+const result = compareObjects(original, modified, matchOnMap);
+
+// Result structure:
+// result.orders[0]._op = 'none' (or 'update' if other fields changed)
+// result.orders[0].items:
+// [
+//   { itemId: 1, qty: 2, _op: 'update' },
+//   { itemId: 3, qty: 1, _op: 'insert' },
+//   { itemId: 2, qty: 1, _op: 'delete' }
+// ]
+```
+
 ### Array Operations
 ```typescript
 const matchOnMap = {
@@ -125,7 +188,14 @@ const result = compareObjects(original, modified, matchOnMap);
 type CrudOperation = 'insert' | 'update' | 'delete' | 'none';
 
 interface MatchOnMap {
-  [arrayName: string]: string[];
+  [arrayName: string]: MatchOnValue;
+}
+
+type MatchOnValue = string[] | MatchOnNode;
+
+interface MatchOnNode {
+  matchOn?: string[];
+  children?: MatchOnMap;
 }
 ```
 
