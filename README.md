@@ -1,4 +1,4 @@
-# object-crud-diff 🎯
+# crud-diff-detector 🎯
 
 A lightweight TypeScript library to detect CRUD operations (insert, update, delete, none) between JavaScript objects with smart array matching.
 
@@ -13,12 +13,12 @@ A lightweight TypeScript library to detect CRUD operations (insert, update, dele
 ## Installation
 
 ```bash
-npm install object-crud-diff
+npm install crud-diff-detector
 ```
 
 ## Quick Start
 ```typescript
-import { compareObjects } from 'object-crud-diff';
+import { compareObjects } from 'crud-diff-detector';
 
 const original = {
   id: 1,
