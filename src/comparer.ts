@@ -10,40 +10,40 @@ export function compareObjects(
     const result = JSON.parse(JSON.stringify(modified));
     
     const getMatchOnByName = (fullPath: string): string[] | undefined => {
-        console.log('🔍 BUSCANDO MATCH PARA:', fullPath);
+
         
         const normalizePath = (path: string): string[] => {
             return path.replace(/\[\d+\]/g, '').split('.').filter(part => part !== '');
         };
         
         const pathParts = normalizePath(fullPath);
-        console.log('📝 PATH NORMALIZADO:', pathParts);
+
         
         let current: any = matchOnMap;
         
         for (let i = 0; i < pathParts.length; i++) {
             const part = pathParts[i];
-            console.log(`🔄 Procesando parte ${i}: "${part}"`, 'Current:', current);
+
             
             if (current && current[part] !== undefined) {
                 current = current[part];
-                console.log(`✅ Encontrado:`, current);
+
             } else if (current && current.children && current.children[part] !== undefined) {
                 current = current.children[part];
-                console.log(`✅ Encontrado en children:`, current);
+
             } else {
-                console.log(`❌ No encontrado: "${part}"`);
+
                 return undefined;
             }
             
             // Si es un nodo con matchOn y es la última parte, devolver matchOn
             if (i === pathParts.length - 1 && current && typeof current === 'object' && !Array.isArray(current) && current.matchOn) {
-                console.log(`🎯 Devolviendo matchOn:`, current.matchOn);
+
                 return current.matchOn;
             }
         }
         
-        console.log(`📦 Resultado final:`, Array.isArray(current) ? current : undefined);
+
         return Array.isArray(current) ? current : undefined;
     };
 
