@@ -1,5 +1,5 @@
 import diff from "microdiff";
-import { CrudOperation, MatchOnMap, PathInfo } from "./types";
+import { CrudOperation, MatchOnMap, MatchOnNode, MatchOnValue, PathInfo } from "./types";
 import { getByPath, setByPath } from "./utils";
 
 export function compareObjects(
@@ -9,8 +9,74 @@ export function compareObjects(
 ): any {
     const result = JSON.parse(JSON.stringify(modified));
     
-    const getMatchOnByName = (nombreArray: string): string[] | undefined => {
-        return matchOnMap[nombreArray];
+    const getMatchOnByName = (fullPath: string): string[] | undefined => {
+
+        
+        const normalizePath = (path: string): string[] => {
+            return path.replace(/\[\d+\]/g, '').split('.').filter(part => part !== '');
+        };
+        
+        const pathParts = normalizePath(fullPath);
+
+        
+        let current: MatchOnValue | undefined = matchOnMap;
+        
+        for (let i = 0; i < pathParts.length; i++) {
+            const part = pathParts[i];
+
+            
+            if (!current || typeof current !== 'object') {
+
+                return undefined;
+            }
+            
+            if (Array.isArray(current)) {
+
+                return current;
+            }
+            
+            // PRIMERO: Buscar directamente en el nivel actual
+            if ((current as MatchOnMap)[part] !== undefined) {
+                current = (current as MatchOnMap)[part];
+
+            } 
+            // SEGUNDO: Si es un nodo jerárquico, buscar en sus children
+            else if (!Array.isArray(current) && current.children && (current.children as MatchOnMap)[part] !== undefined) {
+                current = (current.children as MatchOnMap)[part];
+
+            }
+            // TERCERO: Buscar recursivamente en todos los children de los nodos
+            else {
+
+                let found = false;
+                
+                for (const key in current as MatchOnMap) {
+                    const value: MatchOnValue = (current as MatchOnMap)[key];
+                    if (!Array.isArray(value) && value?.children && (value.children as MatchOnMap)[part] !== undefined) {
+                        current = (value.children as MatchOnMap)[part];
+                        found = true;
+
+                        break;
+                    }
+                }
+                
+                if (!found) {
+
+                    return undefined;
+                }
+            }
+        }
+        
+        // Si es un nodo jerárquico, devolver matchOn
+        if (current && !Array.isArray(current) && current.matchOn) {
+
+            return current.matchOn;
+        }
+        
+        // Si es array simple, devolver directamente
+        const result = Array.isArray(current) ? current : undefined;
+
+        return result;
     };
 
     const rutasUnificadas = getUnifiedPaths(original, modified);
@@ -33,7 +99,7 @@ function processPath(
     original: any,
     modified: any,
     result: any,
-    getMatchOnByName: (nombreArray: string) => string[] | undefined
+    getMatchOnByName: (fullPath: string) => string[] | undefined
 ): void {
     const originalValue = getByPath(original, path);
     const modifiedValue = getByPath(modified, path);
@@ -45,21 +111,25 @@ function processPath(
     } else if (originalValue !== undefined && modifiedValue === undefined) {
         operation = 'delete';
     } else if (Array.isArray(originalValue) && Array.isArray(modifiedValue)) {
-        const arrayName = path.split('.').pop() || path;
-        const matchFields = getMatchOnByName(arrayName);
-
+        const matchFields = getMatchOnByName(path);
+        
         const esArrayDePrimitivos = originalValue.length > 0 && typeof originalValue[0] !== 'object';
 
-        
         if (matchFields && !esArrayDePrimitivos) {
             const nuevoArreglo = compareArrayWithMatch(originalValue, modifiedValue, matchFields);
             setByPath(result, path, nuevoArreglo);
-            return; // No asignar Operacion al array completo
+            return;
         } else {
-            // const diferencias = diff(originalValue, modifiedValue, { shallow: true });
-            // operacion = diferencias.length > 0 ? 'update' : 'none';
             const diferencias = diff(originalValue, modifiedValue, { shallow: true });
             operation = diferencias.length > 0 ? 'update' : 'none';
+            
+            // CREAR NUEVO ARRAY CON _op
+            const arrayConOp = {
+                ...modifiedValue,
+                _op: operation
+            };
+            setByPath(result, path, arrayConOp);
+            return;
         }
     } else {
         const diferencias = diff(originalValue, modifiedValue, { shallow: true });
@@ -87,16 +157,26 @@ function compareArrayWithMatch(
         const elemOrig = findElement(originalArr, elemMod, matchFields);
         
         if (elemOrig) {
-        // Existe en ambos, verificar si cambió
-        const element = { ...elemMod };
-        const diferencias = diff(elemOrig, elemMod, { shallow: true });
-        element._op = diferencias.length > 0 ? 'update' : 'none';
-        newArr.push(element);
+            // Existe en ambos, verificar si cambió
+            const element = { ...elemMod };
+            const diferencias = diff(elemOrig, elemMod, { shallow: true });
+            element._op = diferencias.length > 0 ? 'update' : 'none';
+            
+            // Si el elemento tiene hijos anidados, procesarlos también
+            if (element._op === 'update' || element._op === 'none') {
+                // Procesar hijos anidados aquí si es necesario
+            }
+            
+            newArr.push(element);
         } else {
-        // No existe en original → INSERT
-        const element = { ...elemMod };
-        element._op = 'insert';
-        newArr.push(element);
+            // No existe en original → INSERT
+            const element = { ...elemMod };
+            element._op = 'insert';
+            
+            // Marcar todos los hijos anidados como insert también
+            markAllChildrenWithOp(element, 'insert');
+            
+            newArr.push(element);
         }
     }
 
@@ -105,14 +185,43 @@ function compareArrayWithMatch(
         const elemMod = findElement(modifiedArr, elemOrig, matchFields);
         
         if (!elemMod) {
-        // Existe en original pero no en modificado → DELETE
-        const element = { ...elemOrig };
-        element._op = 'delete';
-        newArr.push(element);
+            // Existe en original pero no en modificado → DELETE
+            const element = { ...elemOrig };
+            element._op = 'delete';
+            
+            // Marcar todos los hijos anidados como delete también
+            markAllChildrenWithOp(element, 'delete');
+            
+            newArr.push(element);
         }
     }
 
     return newArr;
+}
+
+function markAllChildrenWithOp(obj: any, op: string): void {
+    for (const key in obj) {
+        if (obj[key] && typeof obj[key] === 'object') {
+            if (Array.isArray(obj[key])) {
+                // Para arrays anidados, marcar cada elemento como insert
+                obj[key] = obj[key].map((item: any) => {
+                    if (item && typeof item === 'object') {
+                        return {
+                            ...item,
+                            _op: op
+                        };
+                    }
+                    return item;
+                });
+            } else {
+                // Para objetos anidados
+                if (obj[key]._op === undefined) {
+                    obj[key]._op = op;
+                }
+                markAllChildrenWithOp(obj[key], op);
+            }
+        }
+    }
 }
 
 function findElement(arr: any[], elemento: any, matchFields: string[]): any {

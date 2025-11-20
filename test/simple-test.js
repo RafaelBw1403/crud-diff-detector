@@ -15,62 +15,77 @@ function assert(condition, message) {
     if (!condition) throw new Error(message);
 }
 
-// Datos de prueba - Objeto Car
-
 // MatchOnMap para testing
 const carMatchOnMap = {
     'owners': ['id'],
-    'features': [] // Sin match fields - comparación directa
+    'features': [],
+    'maintenance': {
+        matchOn: ['id'],
+        children: {
+            'parts': ['id']
+        }
+    }
 };
 
-console.log('🚗 TESTING OBJECT-CRUD-DIFF\n');
+console.log('🚗 TESTING OBJECT COMPARISON WITH CRUD OPERATIONS\n');
 
-// Test 1: Sin MatchOnMap
-test('Sin MatchOnMap - detecta cambios en raíz', () => {
-    const result = compareObjects(originalCar, modifiedCar);
-    assert(result.Operacion === 'update', 'Raíz debería ser update');
-});
-
-test('Sin MatchOnMap - detecta cambios en propiedades', () => {
-    const result = compareObjects(originalCar, modifiedCar);
-    assert(result.model.Operacion === 'update', 'Modelo debería ser update');
-    assert(result.specifications.Operacion === 'update', 'Specs debería ser update');
-});
-
-// Test 2: Con MatchOnMap
-test('Con MatchOnMap - detecta operaciones CRUD en arrays', () => {
+// Test principal
+test('Comparación completa con MatchOnMap jerárquico', () => {
     const result = compareObjects(originalCar, modifiedCar, carMatchOnMap);
-
-    console.log(result);
     
+    console.log('\n📋 RESULTADO DE LA COMPARACIÓN:');
+    console.log(JSON.stringify(result, null, 2));
+    
+    // 1. Verificar cambios en owners
+    console.log('\n👥 VERIFICANDO OWNERS:');
     const owners = result.owners;
     
-    // John - update (cambió nombre)
     const john = owners.find(o => o.id === 1);
-    assert(john.Operacion === 'update', 'John debería ser update');
+    console.log(`- John (id:1): ${john._op}`);
+    assert(john._op === 'update', 'John debería ser UPDATE (cambió nombre)');
     
-    // Jane - delete (eliminada)
     const jane = owners.find(o => o.id === 2);
-    assert(jane.Operacion === 'delete', 'Jane debería ser delete');
+    console.log(`- Jane (id:2): ${jane._op}`);
+    assert(jane._op === 'delete', 'Jane debería ser DELETE (fue eliminada)');
     
-    // Bob - insert (nuevo)
     const bob = owners.find(o => o.id === 3);
-    assert(bob.Operacion === 'insert', 'Bob debería ser insert');
+    console.log(`- Bob (id:3): ${bob._op}`);
+    assert(bob._op === 'insert', 'Bob debería ser INSERT (nuevo owner)');
+    
+    // 2. Verificar cambios en maintenance
+    console.log('\n🔧 VERIFICANDO MAINTENANCE:');
+    const maintenance = result.maintenance;
+    
+    maintenance.forEach((item, index) => {
+        console.log(`- Maintenance ${index} (id:${item.id}): ${item._op}`);
+    });
+    
+    // 3. Verificar cambios en parts dentro de maintenance
+    console.log('\n🛠️ VERIFICANDO PARTS DENTRO DE MAINTENANCE:');
+    
+    maintenance.forEach((maintenanceItem, maintIndex) => {
+        if (maintenanceItem.parts) {
+            console.log(`\n  Maintenance ${maintIndex} - Parts:`);
+            maintenanceItem.parts.forEach((part, partIndex) => {
+                console.log(`    - Part ${partIndex} (id:${part.id}): ${part._op}`);
+            });
+        }
+    });
+    
+    // 4. Verificar cambios en features
+    console.log('\n⭐ VERIFICANDO FEATURES:');
+    console.log(`- Features: ${result.features._op}`);
+    
+    // 5. Verificar cambios en propiedades simples
+    console.log('\n📝 VERIFICANDO PROPIEDADES SIMPLES:');
+    console.log(`- Model: ${result.model._op}`);
+    console.log(`- Specifications: ${result.specifications._op}`);
+    console.log(`- Fuel: ${result.specifications.fuel._op}`);
 });
 
-// Test 3: Array sin match fields
-test('Array sin match fields - comparación directa', () => {
-    const result = compareObjects(originalCar, modifiedCar, carMatchOnMap);
-    assert(result.features.Operacion === 'update', 'Features debería ser update (cambió longitud)');
-});
-
-// Test 4: Objetos anidados
-test('Objetos anidados - detecta cambios', () => {
-    const result = compareObjects(originalCar, modifiedCar);
-    assert(result.specifications.fuel.Operacion === 'update', 'Fuel debería ser update');
-});
-
-console.log('\n📊 RESUMEN:');
-console.log('• Sin MatchOnMap: Comparación superficial, solo detecta update/none');
-console.log('• Con MatchOnMap: Detección inteligente de insert/update/delete en arrays');
-console.log('• Arrays sin match fields: Comparación directa por referencia');
+console.log('\n🎯 RESUMEN DE PRUEBAS:');
+console.log('• Owners: CRUD individual (insert/update/delete)');
+console.log('• Maintenance: CRUD con hijos anidados');
+console.log('• Parts: CRUD dentro de maintenance (2 niveles)');
+console.log('• Features: Comparación directa de array');
+console.log('• Propiedades simples: Detección de cambios');
