@@ -4,3 +4,7 @@ node_modules/
 # Test data
 data-proveedores.js
 test-proveedores.js
+
+data-proveedoresTS.ts
+test-proveedores.ts
+dataResultProveedor.js

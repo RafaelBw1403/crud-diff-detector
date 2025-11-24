@@ -1,116 +1,221 @@
 import diff from "microdiff";
-import { CrudOperation, MatchOnMap, MatchOnNode, MatchOnValue, PathInfo } from "./types";
+import { CrudOperation, MatchOnMap, PathInfo } from "./types";
 import { getByPath, setByPath } from "./utils";
 
+/**
+ * Compares two objects (original and modified) and returns a copy of the modified object
+ * with an `_op` property on each node indicating the operation performed ('insert', 'update', 'delete', 'none').
+ * 
+ * @param original The original object.
+ * @param modified The modified object.
+ * @param matchOnMap A map defining which fields to use for matching elements in arrays.
+ * @returns The modified object with `_op` operation marks.
+ */
 export function compareObjects(
     original: any,
     modified: any,
     matchOnMap: MatchOnMap = {}
 ): any {
+    // Create a deep copy of the modified object to avoid mutating the original and work on the result.
     const result = JSON.parse(JSON.stringify(modified));
     
+
+    /**
+     * Helper function to get match fields for a given path.
+     * Searches `matchOnMap` for the configuration for the specified path.
+     * 
+     * @param fullPath The full path of the node (e.g., "DatosProveedores[0].Representantes").
+     * @returns An array of strings with key field names, or undefined if not found.
+     */
     const getMatchOnByName = (fullPath: string): string[] | undefined => {
+        // Normalize path: Remove array indices to search in the configuration map.
+        // Ex: "DatosProveedores[0].Representantes" -> "DatosProveedores.Representantes"
+        const normalizedKey = fullPath.replace(/\[\d+\]/g, '');
+        
+        // Strategy 1: Direct search in the flat map.
+        // If the map has the exact key, return the value.
+        if (Array.isArray(matchOnMap[normalizedKey])) {
+             return matchOnMap[normalizedKey] as string[];
+        }
 
-        
-        const normalizePath = (path: string): string[] => {
-            return path.replace(/\[\d+\]/g, '').split('.').filter(part => part !== '');
-        };
-        
-        const pathParts = normalizePath(fullPath);
-
-        
+        // Strategy 2: Tree structure search (original logic).
+        // Navigate the `matchOnMap` object following the path parts.
+        const pathParts = normalizedKey.split('.').filter(part => part !== '');
         let current: any = matchOnMap;
         
         for (let i = 0; i < pathParts.length; i++) {
             const part = pathParts[i];
-
             
             if (current && current[part] !== undefined) {
                 current = current[part];
-
             } else if (current && current.children && current.children[part] !== undefined) {
                 current = current.children[part];
-
             } else {
-
                 return undefined;
             }
             
-            // Si es un nodo con matchOn y es la última parte, devolver matchOn
+            // If we reach the end of the path and find an object with `matchOn`, return it.
             if (i === pathParts.length - 1 && current && typeof current === 'object' && !Array.isArray(current) && current.matchOn) {
-
                 return current.matchOn;
             }
         }
-        
 
+        // If at the end of navigation we find an array, that is the matchOn value.
         return Array.isArray(current) ? current : undefined;
     };
 
+    // Get all unique paths present in both objects (original and modified)
+    // to ensure we process all nodes, even those that have been deleted.
     const rutasUnificadas = getUnifiedPaths(original, modified);
+
+
     
+    // Process each identified path.
     for (const pathInfo of rutasUnificadas) {
         processPath(
-        pathInfo.ruta, 
-        original, 
-        modified, 
-        result, 
-        getMatchOnByName
+            pathInfo, 
+            original, 
+            modified, 
+            result, 
+            getMatchOnByName
         );
     }
     
     return result;
 }
 
+/**
+ * Processes a specific path to determine the operation performed.
+ * Compares the value in `original` and `modified` at that path and updates `result`.
+ * 
+ * @param path The path to process (e.g., "a.b").
+ * @param original The complete original object.
+ * @param modified The complete modified object.
+ * @param result The result object where changes will be written.
+ * @param getMatchOnByName Function to get match fields.
+ */
 function processPath(
-    path: string,
+    pathInfo: PathInfo,
     original: any,
     modified: any,
     result: any,
     getMatchOnByName: (fullPath: string) => string[] | undefined
 ): void {
-    const originalValue = getByPath(original, path);
-    const modifiedValue = getByPath(modified, path);
+
+    // Check flag at the beginning
+    if (!pathInfo.procesar) {
+
+        return;
+    }
+
+    // Get values at the current path for both objects.
+    const originalValue = getByPath(original, pathInfo.ruta);
+    const modifiedValue = getByPath(modified, pathInfo.ruta);
 
     let operation: CrudOperation = 'none';
     
+    // Determine the basic operation.
     if (originalValue === undefined && modifiedValue !== undefined) {
-        operation = 'insert';
+        operation = 'insert'; // Did not exist in original, exists in modified.
     } else if (originalValue !== undefined && modifiedValue === undefined) {
-        operation = 'delete';
+        operation = 'delete'; // Existed in original, does not exist in modified.
     } else if (Array.isArray(originalValue) && Array.isArray(modifiedValue)) {
-        const matchFields = getMatchOnByName(path);
+        // If both are arrays, we need special logic.
+        const matchFields = getMatchOnByName(pathInfo.ruta);
+
+
         
+        // Check if it is an array of primitives (numbers, strings, etc.)
         const esArrayDePrimitivos = originalValue.length > 0 && typeof originalValue[0] !== 'object';
 
+        // If we have match fields configured and it is NOT an array of primitives,
+        // use intelligent array comparison.
         if (matchFields && !esArrayDePrimitivos) {
-            const nuevoArreglo = compareArrayWithMatch(originalValue, modifiedValue, matchFields);
-            setByPath(result, path, nuevoArreglo);
+            // PASS path AND getMatchOnByName FOR RECURSION
+            const nuevoArreglo = compareArrayWithMatch(
+                originalValue, 
+                modifiedValue, 
+                matchFields
+            );
+            setByPath(result, pathInfo.ruta, nuevoArreglo);
+            return; // We finish here because compareArrayWithMatch already handles the entire array.
+        } else if ( !matchFields && !esArrayDePrimitivos){
+
+            // Array of objects without match fields - comparison by index
+            const arrayConOp = [];
+            
+            const maxLength = Math.max(originalValue.length, modifiedValue.length);
+            
+            for (let i = 0; i < maxLength; i++) {
+                const elemOrig = originalValue[i];
+                const elemMod = modifiedValue[i];
+
+                const message = `To ensure correct comparison of elements in the array "${pathInfo.ruta}", add match fields (matchFields) in the configuration`;
+                
+                if (elemOrig === undefined && elemMod !== undefined) {
+                    // INSERT - new element
+                    const element = { ...elemMod, _op: 'insert', _message: message };
+                    arrayConOp.push(element);
+                } else if (elemOrig !== undefined && elemMod === undefined) {
+                    // DELETE - element deleted
+                    const element = { ...elemOrig, _op: 'delete', _message: message };
+                    arrayConOp.push(element);
+                } else if (elemOrig !== undefined && elemMod !== undefined) {
+                    // UPDATE or NONE - compare with diff
+                    const diferencias = diff(elemOrig, elemMod, { shallow: true });
+                    const operation = diferencias.length > 0 ? 'update' : 'none';
+                    const element = { ...elemMod, _op: operation, _message: message };
+                    arrayConOp.push(element);
+                }
+            }
+            
+            setByPath(result, pathInfo.ruta, arrayConOp);
             return;
-        } else {
+        }else {
+            // If there are no matchFields or it is primitive, use standard diff (shallow).
             const diferencias = diff(originalValue, modifiedValue, { shallow: true });
+
             operation = diferencias.length > 0 ? 'update' : 'none';
             
-            // CREAR NUEVO ARRAY CON _op
+            // Assign the operation to the array itself.
+            // CREATE NEW ARRAY WITH _op
             const arrayConOp = [...modifiedValue];
             Object.assign(arrayConOp, { _op: operation });
-            setByPath(result, path, arrayConOp);
+            setByPath(result, pathInfo.ruta, arrayConOp);
             return;
         }
     } else {
+        // For other types (objects, primitives), use diff.
         const diferencias = diff(originalValue, modifiedValue, { shallow: true });
         operation = diferencias.length > 0 ? 'update' : 'none';
     }
 
-    const resultPath = getByPath(result, path);
+    // If we reach here, mark the operation on the result object at that path.
+    const resultPath = getByPath(result, pathInfo.ruta);
     if (resultPath && typeof resultPath === 'object') {
         resultPath._op = operation;
+        const existingMessage = resultPath._message;
+        if (existingMessage) {
+            resultPath._message = existingMessage;
+        }
     }
 }
 
 
 
 
+
+/**
+ * Compares two arrays using key fields to identify elements (instead of indices).
+ * Handles insertions, updates, and deletions of elements.
+ * 
+ * @param originalArr Original array.
+ * @param modifiedArr Modified array.
+ * @param matchFields Key fields to match elements (e.g. ['id']).
+ * @param currentPath Current path in the object (for recursion).
+ * @param getMatchOnByName Function to get match configuration in sub-levels.
+ * @returns New array with elements marked with `_op`.
+ */
 function compareArrayWithMatch(
     originalArr: any[],
     modifiedArr: any[],
@@ -118,46 +223,38 @@ function compareArrayWithMatch(
 ): any[] {
     const newArr = [];
 
-    // Elementos modificados y sin cambios
+    // 1. Process MODIFIED array elements (to detect updates and inserts)
     for (const elemMod of modifiedArr) {
+        // Check if the element exists in the original using matchFields
         const elemOrig = findElement(originalArr, elemMod, matchFields);
         
         if (elemOrig) {
-            // Existe en ambos, verificar si cambió
+            // The element exists in both -> It is an UPDATE or NONE
             const element = { ...elemMod };
             const diferencias = diff(elemOrig, elemMod, { shallow: true });
             element._op = diferencias.length > 0 ? 'update' : 'none';
             
-            // Si el elemento tiene hijos anidados, procesarlos también
-            if (element._op === 'update' || element._op === 'none') {
-                // Procesar hijos anidados aquí si es necesario
-            }
-            
             newArr.push(element);
         } else {
-            // No existe en original → INSERT
+            // Does not exist in original -> INSERT
+            // It is a new element in the array
             const element = { ...elemMod };
             element._op = 'insert';
-            
-            // Marcar todos los hijos anidados como insert también
-            markAllChildrenWithOp(element, 'insert');
-            
+            markAllChildrenWithOp(element, 'insert'); // Mark all its children as inserted
             newArr.push(element);
         }
     }
 
-    // Elementos eliminados
+    // 2. Process ORIGINAL array elements (to detect deletes)
     for (const elemOrig of originalArr) {
         const elemMod = findElement(modifiedArr, elemOrig, matchFields);
         
         if (!elemMod) {
-            // Existe en original pero no en modificado → DELETE
+            // Exists in original but not in modified -> DELETE
+            // The element was deleted from the array
             const element = { ...elemOrig };
             element._op = 'delete';
-            
-            // Marcar todos los hijos anidados como delete también
-            markAllChildrenWithOp(element, 'delete');
-            
+            markAllChildrenWithOp(element, 'delete'); // Mark all its children as deleted
             newArr.push(element);
         }
     }
@@ -165,11 +262,18 @@ function compareArrayWithMatch(
     return newArr;
 }
 
+/**
+ * Recursively marks all children of an object with a specific operation.
+ * Useful for marking the entire content of an inserted or deleted object.
+ * 
+ * @param obj The object to mark.
+ * @param op The operation to assign ('insert', 'delete').
+ */
 function markAllChildrenWithOp(obj: any, op: string): void {
     for (const key in obj) {
         if (obj[key] && typeof obj[key] === 'object') {
             if (Array.isArray(obj[key])) {
-                // Para arrays anidados, marcar cada elemento como insert
+                // For nested arrays, mark each element with the operation
                 obj[key] = obj[key].map((item: any) => {
                     if (item && typeof item === 'object') {
                         return {
@@ -180,7 +284,7 @@ function markAllChildrenWithOp(obj: any, op: string): void {
                     return item;
                 });
             } else {
-                // Para objetos anidados
+                // For nested objects, assign _op and recurse
                 if (obj[key]._op === undefined) {
                     obj[key]._op = op;
                 }
@@ -190,20 +294,40 @@ function markAllChildrenWithOp(obj: any, op: string): void {
     }
 }
 
+/**
+ * Searches for an element in an array that matches the specified key fields.
+ * 
+ * @param arr Array to search in.
+ * @param elemento Reference element (with values to search for).
+ * @param matchFields List of fields that must match (e.g. ['id', 'codigo']).
+ * @returns The found element or undefined.
+ */
 function findElement(arr: any[], elemento: any, matchFields: string[]): any {
-    return arr.find(item => {
-        for (const field of matchFields) {
-        if (item[field] !== undefined && item[field] === elemento[field]) {
-            return true;
-        }
-        }
-        return false;
-    });
+    for (const field of matchFields) {
+        const encontrado = arr.find(item => 
+            item[field] !== undefined && 
+            elemento[field] !== undefined && 
+            item[field] === elemento[field]
+        );
+        if (encontrado) return encontrado;
+    }
+    return undefined;
 }
 
 
 
-function getComplexPathsWithType(obj: any, prefix = ""): PathInfo[] {
+/**
+ * Recursively traverses an object to get all paths to its nodes.
+ * Identifies if each node is an array or object.
+ * 
+ * @param obj Object to traverse.
+ * @param prefix Accumulated prefix of the current path.
+ * @returns Array of PathInfo objects with the path and type.
+ */
+function getComplexPathsWithType(
+    obj: any, 
+    prefix = ""
+): PathInfo[] {
     const rutas: PathInfo[] = [];
 
     if (obj === null || obj === undefined) {
@@ -211,17 +335,34 @@ function getComplexPathsWithType(obj: any, prefix = ""): PathInfo[] {
     }
 
     if (Array.isArray(obj)) {
-        rutas.push({ ruta: prefix || "(root)", tipo: 'array' });
+        rutas.push({ 
+            ruta: prefix || "(root)", 
+            tipo: 'array',
+            procesar: true
+        });
         
         obj.forEach((item, index) => {
             if (item && typeof item === "object") {
-                // AGREGAR ESTA LÍNEA: Incluir el path del array hijo
                 const arrayPath = `${prefix}[${index}]`;
+                
+                // Process children recursively
                 rutas.push(...getComplexPathsWithType(item, arrayPath));
             }
         });
     } else if (obj && typeof obj === "object") {
-        rutas.push({ ruta: prefix || "(root)", tipo: 'objeto' });
+
+        // ⚠️ **WHY IT IS MARKED AS DO NOT PROCESS:**
+        // This path (e.g., 'arr[0]') represents an INDIVIDUAL ARRAY ELEMENT
+        // If we process it, it would compare by INDEX (original.arr[0] vs modified.arr[0])
+        // but elements might be in DIFFERENT ORDER, yielding incorrect results
+
+        // Check with regex if it ends with [n]
+        const esElementoArray = /\[\d+\]$/.test(prefix);
+        rutas.push({ 
+            ruta: prefix || "(root)", 
+            tipo: 'objeto',
+            procesar: !esElementoArray
+        });
         
         for (const key in obj) {
             if (Object.prototype.hasOwnProperty.call(obj, key)) {
@@ -237,12 +378,22 @@ function getComplexPathsWithType(obj: any, prefix = ""): PathInfo[] {
     return rutas;
 }
 
+/**
+ * Gets a unified list of all paths present in the original and modified objects.
+ * This ensures that paths existing in only one of them are not lost.
+ * 
+ * @param original Original object.
+ * @param modificado Modified object.
+ * @returns List of PathInfo with all unique paths.
+ */
 function getUnifiedPaths(original: any, modificado: any): PathInfo[] {
     const originalPaths = getComplexPathsWithType(original);
     const modifiedPaths = getComplexPathsWithType(modificado);
     
+    // Start with the original paths
     const unifiedPaths = [...originalPaths];
     
+    // Add modified paths that are not already present
     for (const rutaMod of modifiedPaths) {
         const existe = unifiedPaths.some(rutaOrig => rutaOrig.ruta === rutaMod.ruta);
         if (!existe) {

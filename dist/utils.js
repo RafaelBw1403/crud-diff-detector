@@ -24,3 +24,4 @@ const setByPath = (obj, path, value) => {
     current[last] = value;
 };
 exports.setByPath = setByPath;
+//# sourceMappingURL=utils.js.map

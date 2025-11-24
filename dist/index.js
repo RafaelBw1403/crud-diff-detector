@@ -6,3 +6,4 @@ Object.defineProperty(exports, "compareObjects", { enumerable: true, get: functi
 // Default export para facilidad de uso
 var comparer_2 = require("./comparer");
 Object.defineProperty(exports, "default", { enumerable: true, get: function () { return comparer_2.compareObjects; } });
+//# sourceMappingURL=index.js.map
