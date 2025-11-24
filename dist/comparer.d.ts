@@ -1,11 +1,11 @@
 import { MatchOnMap } from "./types";
 /**
- * Compara dos objetos (original y modificado) y devuelve una copia del objeto modificado
- * con una propiedad `_op` en cada nodo que indica la operación realizada ('insert', 'update', 'delete', 'none').
+ * Compares two objects (original and modified) and returns a copy of the modified object
+ * with an `_op` property on each node indicating the operation performed ('insert', 'update', 'delete', 'none').
  *
- * @param original El objeto original.
- * @param modified El objeto modificado.
- * @param matchOnMap Un mapa que define qué campos usar para emparejar elementos en arrays.
- * @returns El objeto modificado con las marcas de operación `_op`.
+ * @param original The original object.
+ * @param modified The modified object.
+ * @param matchOnMap A map defining which fields to use for matching elements in arrays.
+ * @returns The modified object with `_op` operation marks.
  */
 export declare function compareObjects(original: any, modified: any, matchOnMap?: MatchOnMap): any;

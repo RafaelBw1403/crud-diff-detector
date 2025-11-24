@@ -7,35 +7,35 @@ exports.compareObjects = compareObjects;
 const microdiff_1 = __importDefault(require("microdiff"));
 const utils_1 = require("./utils");
 /**
- * Compara dos objetos (original y modificado) y devuelve una copia del objeto modificado
- * con una propiedad `_op` en cada nodo que indica la operación realizada ('insert', 'update', 'delete', 'none').
+ * Compares two objects (original and modified) and returns a copy of the modified object
+ * with an `_op` property on each node indicating the operation performed ('insert', 'update', 'delete', 'none').
  *
- * @param original El objeto original.
- * @param modified El objeto modificado.
- * @param matchOnMap Un mapa que define qué campos usar para emparejar elementos en arrays.
- * @returns El objeto modificado con las marcas de operación `_op`.
+ * @param original The original object.
+ * @param modified The modified object.
+ * @param matchOnMap A map defining which fields to use for matching elements in arrays.
+ * @returns The modified object with `_op` operation marks.
  */
 function compareObjects(original, modified, matchOnMap = {}) {
-    // Creamos una copia profunda del objeto modificado para no mutar el original y trabajar sobre el resultado.
+    // Create a deep copy of the modified object to avoid mutating the original and work on the result.
     const result = JSON.parse(JSON.stringify(modified));
     /**
-     * Función auxiliar para obtener los campos de coincidencia (match fields) para una ruta dada.
-     * Busca en el `matchOnMap` la configuración para la ruta especificada.
+     * Helper function to get match fields for a given path.
+     * Searches `matchOnMap` for the configuration for the specified path.
      *
-     * @param fullPath La ruta completa del nodo (ej. "DatosProveedores[0].Representantes").
-     * @returns Un array de strings con los nombres de los campos clave, o undefined si no se encuentra.
+     * @param fullPath The full path of the node (e.g., "DatosProveedores[0].Representantes").
+     * @returns An array of strings with key field names, or undefined if not found.
      */
     const getMatchOnByName = (fullPath) => {
-        // Normalizar ruta: Elimina los índices de array para buscar en el mapa de configuración.
-        // Ej: "DatosProveedores[0].Representantes" -> "DatosProveedores.Representantes"
+        // Normalize path: Remove array indices to search in the configuration map.
+        // Ex: "DatosProveedores[0].Representantes" -> "DatosProveedores.Representantes"
         const normalizedKey = fullPath.replace(/\[\d+\]/g, '');
-        // Estrategia 1: Búsqueda directa en el mapa plano.
-        // Si el mapa tiene la clave exacta, devolvemos el valor.
+        // Strategy 1: Direct search in the flat map.
+        // If the map has the exact key, return the value.
         if (Array.isArray(matchOnMap[normalizedKey])) {
             return matchOnMap[normalizedKey];
         }
-        // Estrategia 2: Búsqueda en estructura de árbol (lógica original).
-        // Navega por el objeto `matchOnMap` siguiendo las partes de la ruta.
+        // Strategy 2: Tree structure search (original logic).
+        // Navigate the `matchOnMap` object following the path parts.
         const pathParts = normalizedKey.split('.').filter(part => part !== '');
         let current = matchOnMap;
         for (let i = 0; i < pathParts.length; i++) {
@@ -49,85 +49,82 @@ function compareObjects(original, modified, matchOnMap = {}) {
             else {
                 return undefined;
             }
-            // Si llegamos al final de la ruta y encontramos un objeto con `matchOn`, lo devolvemos.
+            // If we reach the end of the path and find an object with `matchOn`, return it.
             if (i === pathParts.length - 1 && current && typeof current === 'object' && !Array.isArray(current) && current.matchOn) {
                 return current.matchOn;
             }
         }
-        // Si al final de la navegación encontramos un array, ese es el valor de matchOn.
+        // If at the end of navigation we find an array, that is the matchOn value.
         return Array.isArray(current) ? current : undefined;
     };
-    // Obtiene todas las rutas únicas presentes en ambos objetos (original y modificado)
-    // para asegurar que procesamos todos los nodos, incluso los que han sido eliminados.
+    // Get all unique paths present in both objects (original and modified)
+    // to ensure we process all nodes, even those that have been deleted.
     const rutasUnificadas = getUnifiedPaths(original, modified);
-    console.log("RUTAS UNIFICADAS :_ ", rutasUnificadas.flatMap((pathInfo) => pathInfo.ruta));
-    // Procesamos cada ruta identificada.
+    // Process each identified path.
     for (const pathInfo of rutasUnificadas) {
         processPath(pathInfo, original, modified, result, getMatchOnByName);
     }
     return result;
 }
 /**
- * Procesa una ruta específica para determinar la operación realizada.
- * Compara el valor en `original` y `modified` en esa ruta y actualiza `result`.
+ * Processes a specific path to determine the operation performed.
+ * Compares the value in `original` and `modified` at that path and updates `result`.
  *
- * @param path La ruta a procesar (ej. "a.b").
- * @param original El objeto original completo.
- * @param modified El objeto modificado completo.
- * @param result El objeto resultado donde se escribirán los cambios.
- * @param getMatchOnByName Función para obtener los campos de coincidencia.
+ * @param path The path to process (e.g., "a.b").
+ * @param original The complete original object.
+ * @param modified The complete modified object.
+ * @param result The result object where changes will be written.
+ * @param getMatchOnByName Function to get match fields.
  */
 function processPath(pathInfo, original, modified, result, getMatchOnByName) {
-    // Verificar flag al inicio
+    // Check flag at the beginning
     if (!pathInfo.procesar) {
-        console.log(`⏭️  Skipeando ${pathInfo.ruta}`);
         return;
     }
-    // Obtenemos los valores en la ruta actual para ambos objetos.
+    // Get values at the current path for both objects.
     const originalValue = (0, utils_1.getByPath)(original, pathInfo.ruta);
     const modifiedValue = (0, utils_1.getByPath)(modified, pathInfo.ruta);
     let operation = 'none';
-    // Determinamos la operación básica.
+    // Determine the basic operation.
     if (originalValue === undefined && modifiedValue !== undefined) {
-        operation = 'insert'; // No existía en original, existe en modificado.
+        operation = 'insert'; // Did not exist in original, exists in modified.
     }
     else if (originalValue !== undefined && modifiedValue === undefined) {
-        operation = 'delete'; // Existía en original, no existe en modificado.
+        operation = 'delete'; // Existed in original, does not exist in modified.
     }
     else if (Array.isArray(originalValue) && Array.isArray(modifiedValue)) {
-        // Si ambos son arrays, necesitamos una lógica especial.
+        // If both are arrays, we need special logic.
         const matchFields = getMatchOnByName(pathInfo.ruta);
-        console.log("MATCH FIELDS :_ ", matchFields);
-        // Verificamos si es un array de primitivos (números, strings, etc.)
+        // Check if it is an array of primitives (numbers, strings, etc.)
         const esArrayDePrimitivos = originalValue.length > 0 && typeof originalValue[0] !== 'object';
-        // Si tenemos campos de coincidencia configurados y NO es un array de primitivos,
-        // usamos la comparación inteligente de arrays.
+        // If we have match fields configured and it is NOT an array of primitives,
+        // use intelligent array comparison.
         if (matchFields && !esArrayDePrimitivos) {
-            // PASAMOS path Y getMatchOnByName PARA LA RECURSIVIDAD
+            // PASS path AND getMatchOnByName FOR RECURSION
             const nuevoArreglo = compareArrayWithMatch(originalValue, modifiedValue, matchFields);
             (0, utils_1.setByPath)(result, pathInfo.ruta, nuevoArreglo);
-            return; // Terminamos aquí porque compareArrayWithMatch ya maneja todo el array.
+            return; // We finish here because compareArrayWithMatch already handles the entire array.
         }
         else if (!matchFields && !esArrayDePrimitivos) {
-            // Array de objetos sin campos de coincidencia - comparación por índice
+            // Array of objects without match fields - comparison by index
             const arrayConOp = [];
             const maxLength = Math.max(originalValue.length, modifiedValue.length);
             for (let i = 0; i < maxLength; i++) {
                 const elemOrig = originalValue[i];
                 const elemMod = modifiedValue[i];
-                const message = `Para asegurar una comparación correcta de elementos en el array "${pathInfo.ruta}", agregue los campos de coincidencia (matchFields) en la configuración`;
+                const message = `To ensure correct comparison of elements in the array "${pathInfo.ruta}", add match fields (matchFields) in the configuration`;
                 if (elemOrig === undefined && elemMod !== undefined) {
-                    // INSERT - elemento nuevo
+                    // INSERT - new element
                     const element = { ...elemMod, _op: 'insert', _message: message };
                     arrayConOp.push(element);
                 }
                 else if (elemOrig !== undefined && elemMod === undefined) {
-                    // DELETE - elemento eliminado
+                    // DELETE - element deleted
                     const element = { ...elemOrig, _op: 'delete', _message: message };
                     arrayConOp.push(element);
                 }
                 else if (elemOrig !== undefined && elemMod !== undefined) {
-                    // UPDATE o NONE - comparar con diff
+                    // UPDATE or NONE - compare with diff
                     const diferencias = (0, microdiff_1.default)(elemOrig, elemMod, { shallow: true });
                     const operation = diferencias.length > 0 ? 'update' : 'none';
                     const element = { ...elemMod, _op: operation, _message: message };
@@ -138,12 +135,11 @@ function processPath(pathInfo, original, modified, result, getMatchOnByName) {
             return;
         }
         else {
-            // Si no hay matchFields o es primitivo, usamos diff estándar (shallow).
+            // If there are no matchFields or it is primitive, use standard diff (shallow).
             const diferencias = (0, microdiff_1.default)(originalValue, modifiedValue, { shallow: true });
-            console.log("DIFERENCIAS :_ ", diferencias);
             operation = diferencias.length > 0 ? 'update' : 'none';
-            // Asignamos la operación al array mismo.
-            // CREAR NUEVO ARRAY CON _op
+            // Assign the operation to the array itself.
+            // CREATE NEW ARRAY WITH _op
             const arrayConOp = [...modifiedValue];
             Object.assign(arrayConOp, { _op: operation });
             (0, utils_1.setByPath)(result, pathInfo.ruta, arrayConOp);
@@ -151,11 +147,11 @@ function processPath(pathInfo, original, modified, result, getMatchOnByName) {
         }
     }
     else {
-        // Para otros tipos (objetos, primitivos), usamos diff.
+        // For other types (objects, primitives), use diff.
         const diferencias = (0, microdiff_1.default)(originalValue, modifiedValue, { shallow: true });
         operation = diferencias.length > 0 ? 'update' : 'none';
     }
-    // Si llegamos aquí, marcamos la operación en el objeto resultado en esa ruta.
+    // If we reach here, mark the operation on the result object at that path.
     const resultPath = (0, utils_1.getByPath)(result, pathInfo.ruta);
     if (resultPath && typeof resultPath === 'object') {
         resultPath._op = operation;
@@ -166,64 +162,64 @@ function processPath(pathInfo, original, modified, result, getMatchOnByName) {
     }
 }
 /**
- * Compara dos arrays usando campos clave para identificar elementos (en lugar de índices).
- * Maneja inserciones, actualizaciones y eliminaciones de elementos.
+ * Compares two arrays using key fields to identify elements (instead of indices).
+ * Handles insertions, updates, and deletions of elements.
  *
- * @param originalArr Array original.
- * @param modifiedArr Array modificado.
- * @param matchFields Campos clave para emparejar elementos (ej. ['id']).
- * @param currentPath Ruta actual en el objeto (para recursividad).
- * @param getMatchOnByName Función para obtener configuración de match en sub-niveles.
- * @returns Nuevo array con los elementos marcados con `_op`.
+ * @param originalArr Original array.
+ * @param modifiedArr Modified array.
+ * @param matchFields Key fields to match elements (e.g. ['id']).
+ * @param currentPath Current path in the object (for recursion).
+ * @param getMatchOnByName Function to get match configuration in sub-levels.
+ * @returns New array with elements marked with `_op`.
  */
 function compareArrayWithMatch(originalArr, modifiedArr, matchFields) {
     const newArr = [];
-    // 1. Procesar elementos del array MODIFICADO (para detectar updates e inserts)
+    // 1. Process MODIFIED array elements (to detect updates and inserts)
     for (const elemMod of modifiedArr) {
-        // Buscamos si el elemento existe en el original usando los matchFields
+        // Check if the element exists in the original using matchFields
         const elemOrig = findElement(originalArr, elemMod, matchFields);
         if (elemOrig) {
-            // El elemento existe en ambos -> Es un UPDATE o NONE
+            // The element exists in both -> It is an UPDATE or NONE
             const element = { ...elemMod };
             const diferencias = (0, microdiff_1.default)(elemOrig, elemMod, { shallow: true });
             element._op = diferencias.length > 0 ? 'update' : 'none';
             newArr.push(element);
         }
         else {
-            // No existe en original → INSERT
-            // Es un elemento nuevo en el array
+            // Does not exist in original -> INSERT
+            // It is a new element in the array
             const element = { ...elemMod };
             element._op = 'insert';
-            markAllChildrenWithOp(element, 'insert'); // Marcamos todos sus hijos como insertados
+            markAllChildrenWithOp(element, 'insert'); // Mark all its children as inserted
             newArr.push(element);
         }
     }
-    // 2. Procesar elementos del array ORIGINAL (para detectar deletes)
+    // 2. Process ORIGINAL array elements (to detect deletes)
     for (const elemOrig of originalArr) {
         const elemMod = findElement(modifiedArr, elemOrig, matchFields);
         if (!elemMod) {
-            // Existe en original pero no en modificado → DELETE
-            // El elemento fue eliminado del array
+            // Exists in original but not in modified -> DELETE
+            // The element was deleted from the array
             const element = { ...elemOrig };
             element._op = 'delete';
-            markAllChildrenWithOp(element, 'delete'); // Marcamos todos sus hijos como eliminados
+            markAllChildrenWithOp(element, 'delete'); // Mark all its children as deleted
             newArr.push(element);
         }
     }
     return newArr;
 }
 /**
- * Marca recursivamente todos los hijos de un objeto con una operación específica.
- * Útil para marcar todo el contenido de un objeto insertado o eliminado.
+ * Recursively marks all children of an object with a specific operation.
+ * Useful for marking the entire content of an inserted or deleted object.
  *
- * @param obj El objeto a marcar.
- * @param op La operación a asignar ('insert', 'delete').
+ * @param obj The object to mark.
+ * @param op The operation to assign ('insert', 'delete').
  */
 function markAllChildrenWithOp(obj, op) {
     for (const key in obj) {
         if (obj[key] && typeof obj[key] === 'object') {
             if (Array.isArray(obj[key])) {
-                // Para arrays anidados, marcar cada elemento con la operación
+                // For nested arrays, mark each element with the operation
                 obj[key] = obj[key].map((item) => {
                     if (item && typeof item === 'object') {
                         return {
@@ -235,7 +231,7 @@ function markAllChildrenWithOp(obj, op) {
                 });
             }
             else {
-                // Para objetos anidados, asignar _op y recursar
+                // For nested objects, assign _op and recurse
                 if (obj[key]._op === undefined) {
                     obj[key]._op = op;
                 }
@@ -245,12 +241,12 @@ function markAllChildrenWithOp(obj, op) {
     }
 }
 /**
- * Busca un elemento en un array que coincida con los campos clave especificados.
+ * Searches for an element in an array that matches the specified key fields.
  *
- * @param arr Array donde buscar.
- * @param elemento Elemento de referencia (con los valores a buscar).
- * @param matchFields Lista de campos que deben coincidir (ej. ['id', 'codigo']).
- * @returns El elemento encontrado o undefined.
+ * @param arr Array to search in.
+ * @param elemento Reference element (with values to search for).
+ * @param matchFields List of fields that must match (e.g. ['id', 'codigo']).
+ * @returns The found element or undefined.
  */
 function findElement(arr, elemento, matchFields) {
     for (const field of matchFields) {
@@ -263,12 +259,12 @@ function findElement(arr, elemento, matchFields) {
     return undefined;
 }
 /**
- * Recorre recursivamente un objeto para obtener todas las rutas (paths) a sus nodos.
- * Identifica si cada nodo es un array u objeto.
+ * Recursively traverses an object to get all paths to its nodes.
+ * Identifies if each node is an array or object.
  *
- * @param obj Objeto a recorrer.
- * @param prefix Prefijo acumulado de la ruta actual.
- * @returns Array de objetos PathInfo con la ruta y el tipo.
+ * @param obj Object to traverse.
+ * @param prefix Accumulated prefix of the current path.
+ * @returns Array of PathInfo objects with the path and type.
  */
 function getComplexPathsWithType(obj, prefix = "") {
     const rutas = [];
@@ -284,17 +280,17 @@ function getComplexPathsWithType(obj, prefix = "") {
         obj.forEach((item, index) => {
             if (item && typeof item === "object") {
                 const arrayPath = `${prefix}[${index}]`;
-                // Procesar hijos recursivamente
+                // Process children recursively
                 rutas.push(...getComplexPathsWithType(item, arrayPath));
             }
         });
     }
     else if (obj && typeof obj === "object") {
-        // ⚠️ **POR QUÉ SE MARCA COMO NO PROCESAR:**
-        // Este path (ej: 'Contactos[0]') representa un ELEMENTO INDIVIDUAL de array
-        // Si lo procesamos, haría comparación por ÍNDICE (Contactos[0] vs Contactos[0])
-        // pero los elementos pueden estar en DIFERENTE ORDEN, dando resultados incorrectos
-        // Verificar con regex si termina con [n]
+        // ⚠️ **WHY IT IS MARKED AS DO NOT PROCESS:**
+        // This path (e.g., 'arr[0]') represents an INDIVIDUAL ARRAY ELEMENT
+        // If we process it, it would compare by INDEX (original.arr[0] vs modified.arr[0])
+        // but elements might be in DIFFERENT ORDER, yielding incorrect results
+        // Check with regex if it ends with [n]
         const esElementoArray = /\[\d+\]$/.test(prefix);
         rutas.push({
             ruta: prefix || "(root)",
@@ -314,19 +310,19 @@ function getComplexPathsWithType(obj, prefix = "") {
     return rutas;
 }
 /**
- * Obtiene una lista unificada de todas las rutas presentes en el objeto original y el modificado.
- * Esto asegura que no se pierdan rutas que solo existen en uno de los dos.
+ * Gets a unified list of all paths present in the original and modified objects.
+ * This ensures that paths existing in only one of them are not lost.
  *
- * @param original Objeto original.
- * @param modificado Objeto modificado.
- * @returns Lista de PathInfo con todas las rutas únicas.
+ * @param original Original object.
+ * @param modificado Modified object.
+ * @returns List of PathInfo with all unique paths.
  */
 function getUnifiedPaths(original, modificado) {
     const originalPaths = getComplexPathsWithType(original);
     const modifiedPaths = getComplexPathsWithType(modificado);
-    // Comenzamos con las rutas del original
+    // Start with the original paths
     const unifiedPaths = [...originalPaths];
-    // Agregamos las rutas del modificado que no estén ya
+    // Add modified paths that are not already present
     for (const rutaMod of modifiedPaths) {
         const existe = unifiedPaths.some(rutaOrig => rutaOrig.ruta === rutaMod.ruta);
         if (!existe) {
