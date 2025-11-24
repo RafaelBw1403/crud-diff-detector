@@ -1,214 +1,264 @@
-# crud-diff-detector 🎯
+# CRUD Diff Detector 🎯
 
-A lightweight TypeScript library to detect CRUD operations (insert, update, delete, none) between JavaScript objects with smart array matching.
+A lightweight TypeScript library to detect CRUD operations (insert, update, delete, no change) between JavaScript objects with intelligent array matching.
 
-## Features
+## ✨ Key Features
 
-- **🔍 Smart Comparison**: Detects inserts, updates, deletes, and no-changes
-- **🧩 Array Matching**: Intelligent array comparison using configurable fields
-- **🏷 TypeScript Native**: Full TypeScript support with typed results
+- **🔍 Smart Comparison**: Detects insertions, updates, deletions, and no changes
+- **🧩 Array Matching**: Intelligent comparison using configurable fields
+- **🌊 Deep Nesting**: Support for nested objects and arrays with full path configuration
 - **🚀 Lightweight**: Zero dependencies (except microdiff)
 - **⚙️ Configurable**: Customizable matching fields for different array types
 
-## Installation
+## 🚀 Installation
 
 ```bash
 npm install crud-diff-detector
 ```
 
-## Quick Start
+## 💡 Why use this library?
+
+When you need to compare complex objects with arrays, traditional solutions fail to correctly identify which elements were added, modified, or removed. This library solves that problem:
+
+```typescript
+// ❌ Traditional diff - doesn't work well with arrays
+JSON.stringify(original) === JSON.stringify(modified) // False positive/negative
+
+// ✅ CRUD Diff Detector - identifies exact changes
+const result = compareObjects(original, modified, matchConfig)
+// Each element has _op: 'insert' | 'update' | 'delete' | 'none'
+```
+
+## 🎯 Quick Start
+
 ```typescript
 import { compareObjects } from 'crud-diff-detector';
 
+// Original object
 const original = {
   id: 1,
   users: [
-    { id: 1, name: 'John' },
-    { id: 2, name: 'Jane' }
+    { id: 1, name: 'John', email: 'john@example.com' },
+    { id: 2, name: 'Jane', email: 'jane@example.com' }
+  ],
+  orders: [
+    { orderId: 'A1', status: 'pending', total: 100 },
+    { orderId: 'A2', status: 'completed', total: 200 }
   ]
 };
 
+// Modified object
 const modified = {
-  id: 1,
+  id: 1, // no change
   users: [
-    { id: 1, name: 'John Doe' }, // updated
-    { id: 3, name: 'Bob' }       // new
-    // Jane deleted
+    { id: 1, name: 'John Doe', email: 'john@example.com' }, // name updated
+    { id: 3, name: 'Bob', email: 'bob@example.com' }        // new user
+    // Jane was deleted
+  ],
+  orders: [
+    { orderId: 'A1', status: 'shipped', total: 100 }, // status updated
+    { orderId: 'A3', status: 'pending', total: 300 }  // new order
+    // A2 was deleted
   ]
 };
 
+// Match configuration
 const matchOnMap = {
-  'users': ['id'] // Match users by 'id' field
+  'users': ['id'],        // Match users by 'id' field
+  'orders': ['orderId']   // Match orders by 'orderId' field
 };
 
 const result = compareObjects(original, modified, matchOnMap);
 
 console.log(result.users);
 // [
-//   { id: 1, name: 'John Doe', _op: 'update' },
-//   { id: 3, name: 'Bob', _op: 'insert' },
-//   { id: 2, name: 'Jane', _op: 'delete' }
+//   { id: 1, name: 'John Doe', email: 'john@example.com', _op: 'update' },
+//   { id: 3, name: 'Bob', email: 'bob@example.com', _op: 'insert' },
+//   { id: 2, name: 'Jane', email: 'jane@example.com', _op: 'delete' }
 // ]
-```
 
-## API
-```typescript
-compareObjects(original, modified, matchOnMap?)
-```
-
-### Parameters
-- original: Original object
-- modified: Modified object to compare against
-- matchOnMap: Optional configuration for array matching
-
-### Returns
-The modified object with _op properties indicating the operation:
-
-- 'insert': New element
-- 'update': Modified element
-- 'delete': Removed element
-- 'none': No changes
-
-### MatchOnMap Configuration
-Define how to match elements in arrays, including nested arrays:
-
-```typescript
-const matchOnMap = {
-  'users': ['id'],           // Match by single field
-  'products': ['id', 'sku'], // Match by multiple fields
-  'tags': [],                // No matching - direct comparison
-  
-  // Nested array matching
-  'orders': {
-    matchOn: ['orderId'],    // Match orders by orderId
-    children: {
-      'items': ['itemId']    // Match items within orders by itemId
-    }
-  }
-};
-```
-
-### Deep Diff & Recursive Tagging
-When an object is marked as `insert` or `delete`, all its nested objects and arrays are automatically recursively marked with the same operation. This ensures that the entire subtree reflects the change status.
-
-### Examples
-Basic Object Comparison
-```typescript
-const original = { name: 'John', age: 30 };
-const modified = { name: 'John', age: 31 };
-
-const result = compareObjects(original, modified);
-// { name: 'John', age: 31, _op: 'update' }
-```
-
-### Nested Objects
-```typescript
-const original = {
-  profile: {
-    personal: { name: 'John', age: 30 }
-  }
-};
-
-const modified = {
-  profile: {
-    personal: { name: 'John', age: 31 }
-  }
-};
-
-const result = compareObjects(original, modified);
-// profile.personal.age has _op: 'update'
-```
-
-### Nested Array Matching (MatchOnNode)
-This example demonstrates how to use the `MatchOnNode` structure to match arrays within arrays.
-
-```typescript
-const original = {
-  id: 1,
-  orders: [
-    {
-      orderId: 'A1',
-      items: [
-        { itemId: 1, qty: 1 },
-        { itemId: 2, qty: 1 }
-      ]
-    }
-  ]
-};
-
-const modified = {
-  id: 1,
-  orders: [
-    {
-      orderId: 'A1',
-      items: [
-        { itemId: 1, qty: 2 }, // updated
-        { itemId: 3, qty: 1 }  // inserted
-        // itemId: 2 deleted
-      ]
-    }
-  ]
-};
-
-const matchOnMap = {
-  'orders': {
-    matchOn: ['orderId'],
-    children: {
-      'items': ['itemId']
-    }
-  }
-};
-
-const result = compareObjects(original, modified, matchOnMap);
-
-// Result structure:
-// result.orders[0]._op = 'none' (or 'update' if other fields changed)
-// result.orders[0].items:
+console.log(result.orders);
 // [
-//   { itemId: 1, qty: 2, _op: 'update' },
-//   { itemId: 3, qty: 1, _op: 'insert' },
-//   { itemId: 2, qty: 1, _op: 'delete' }
+//   { orderId: 'A1', status: 'shipped', total: 100, _op: 'update' },
+//   { orderId: 'A3', status: 'pending', total: 300, _op: 'insert' },
+//   { orderId: 'A2', status: 'completed', total: 200, _op: 'delete' }
 // ]
 ```
 
-### Array Operations
+## ⚙️ Advanced MatchOnMap Configuration
+
+### Full Path Structure
 ```typescript
 const matchOnMap = {
-  'items': ['id'],
-  'features': [] // Primitive array
+  'users': ['id'],                           // Match by one field
+  'products': ['id', 'sku'],                 // Match by multiple fields
+  'categories': ['code'],                    // Match by different field
+  'tags': [],                                // No match - direct comparison
+  'customers.orders': ['orderId'],           // Orders within customers
+  'customers.orders.items': ['productId'],   // Items within orders
+  'customers.addresses': ['addressId']       // Addresses within customers
+};
+```
+
+### Complete Example with Nesting
+
+```typescript
+const original = {
+  customers: [
+    {
+      customerId: 'C1',
+      name: 'John Doe',
+      orders: [
+        {
+          orderId: 'O1',
+          date: '2024-01-01',
+          items: [
+            { productId: 'P1', quantity: 2, price: 10 },
+            { productId: 'P2', quantity: 1, price: 20 }
+          ]
+        }
+      ],
+      addresses: [
+        { addressId: 'A1', city: 'New York', zip: '10001' }
+      ]
+    }
+  ]
+};
+
+const modified = {
+  customers: [
+    {
+      customerId: 'C1',
+      name: 'John Smith', // updated
+      orders: [
+        {
+          orderId: 'O1',
+          date: '2024-01-01',
+          items: [
+            { productId: 'P1', quantity: 3, price: 10 }, // quantity updated
+            { productId: 'P3', quantity: 1, price: 15 }  // new product
+            // P2 deleted
+          ]
+        },
+        {
+          orderId: 'O2', // new order
+          date: '2024-01-02',
+          items: [
+            { productId: 'P4', quantity: 1, price: 25 }
+          ]
+        }
+      ],
+      addresses: [
+        { addressId: 'A1', city: 'New York', zip: '10001' }, // no change
+        { addressId: 'A2', city: 'Boston', zip: '02101' }    // new address
+      ]
+    }
+  ]
+};
+
+// Configuration with full paths
+const matchOnMap = {
+  'customers': ['customerId'],
+  'customers.orders': ['orderId'],
+  'customers.orders.items': ['productId'],
+  'customers.addresses': ['addressId']
 };
 
 const result = compareObjects(original, modified, matchOnMap);
-// items will have individual _op operations
-// features array will have _op on the array itself
+
+// Result will include:
+// - customers[0]._op = 'update' (name changed)
+// - customers[0].orders[0]._op = 'update' (items changed)
+// - customers[0].orders[0].items[0]._op = 'update' (quantity changed)
+// - customers[0].orders[0].items[1]._op = 'insert' (new product)
+// - customers[0].orders[1]._op = 'insert' (new order)
+// - customers[0].addresses[1]._op = 'insert' (new address)
 ```
 
-### Types
+## 📊 CRUD Operations
+
+### `insert`
+New elements that did not exist in the original object.
+
 ```typescript
-type CrudOperation = 'insert' | 'update' | 'delete' | 'none';
-
-interface MatchOnMap {
-  [arrayName: string]: MatchOnValue;
-}
-
-type MatchOnValue = string[] | MatchOnNode;
-
-interface MatchOnNode {
-  matchOn?: string[];
-  children?: MatchOnMap;
-}
+{ id: 3, name: 'New User', _op: 'insert' }
 ```
 
-### Use Cases
-Audit Logs: Track changes between object states
+### `update`
+Existing elements that were modified.
 
-Data Sync: Detect what needs to be synced
+```typescript
+{ id: 1, name: 'Updated Name', _op: 'update' }
+```
 
-Undo/Redo: Track operations for history
+### `delete`
+Elements that existed in the original but were removed.
 
-Form Validation: Detect dirty fields
+```typescript
+{ id: 2, name: 'Deleted User', _op: 'delete' }
+```
 
-API Optimization: Send only changed data
+### `none`
+Elements that underwent no changes.
 
-## License
+```typescript
+{ id: 1, name: 'Same Name', _op: 'none' }
+```
+
+## 🔧 API
+
+### `compareObjects(original, modified, matchOnMap?)`
+
+#### Parameters
+- `original`: Original object
+- `modified`: Modified object to compare
+- `matchOnMap`: Optional configuration for array matching
+
+#### Returns
+The modified object with `_op` properties indicating the operation on each node.
+
+## 🎪 Use Cases
+
+### Change Audit
+```typescript
+const auditLog = compareObjects(beforeState, afterState, matchConfig);
+// Generates detailed log of all changes
+```
+
+### Data Synchronization
+```typescript
+const changes = compareObjects(localData, serverData, matchConfig);
+// Sends only changes to the server
+api.sync(changes);
+```
+
+### Undo/Redo History
+```typescript
+const operations = compareObjects(previousState, currentState, matchConfig);
+// Stores operations for undo/redo functionality
+```
+
+### Form Validation
+```typescript
+const dirtyFields = compareObjects(initialData, formData, matchConfig);
+// Detects which fields were modified
+```
+
+## 💡 Best Practices
+
+1. **Always use unique fields** for `matchOn` (IDs, codes, etc.)
+2. **Use full paths** for nested arrays: `'parent.child.grandchild'`
+3. **Configure all arrays** that need intelligent matching
+4. **Handle arrays of primitives** by omitting them from the map for direct comparison
+5. **Array indices are automatically normalized**: `customers[0].orders` → `customers.orders`
+
+## 🚨 Considerations
+
+- Deleted elements appear in the result with `_op: 'delete'`
+- The library performs a deep copy of the modified object
+- The `_op` marking propagates recursively in insertions/deletions
+- Paths in `matchOnMap` must use dots without indices: `customers.orders` not `customers[0].orders`
+
+## 📄 License
+
 MIT
