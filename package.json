@@ -18,6 +18,10 @@
         "audit",
         "typescript"
     ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/RafaelBw1403/crud-diff-detector.git"
+    },
     "author": "Rafael Nava",
     "license": "MIT",
     "devDependencies": {
